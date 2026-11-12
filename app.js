@@ -640,6 +640,7 @@ function showSplash(txt, opts = {}){
   $("splash").hidden = false; $("splashTxt").textContent = txt;
   $("splashBtn").hidden = !opts.add;
   $("authForm").hidden = !opts.auth;
+  $("resetForm").hidden = !opts.reset;
 }
 async function loadGames(prefer){
   const list = must(await sb.from("carnet_games").select("id,name,image_path,created_at").order("created_at"));
@@ -734,6 +735,7 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- auth ---------- */
 function showAuth(msg){
+  if (!msg && !user && !$("authForm").hidden) return;   // déjà sur l'écran de connexion : garder le message affiché
   user = null; games = []; selectGame(null);
   $("games").hidden = true; closePanel();
   setCloud("", "Non connecté");
@@ -761,6 +763,57 @@ async function authSubmit(signup){
       : "Échec : " + m;
   } finally { $("authIn").disabled = $("authUp").disabled = false; }
 }
+const appUrl = () => location.origin + location.pathname;
+function authMsg(text, ok){ const el = $("authErr"); el.textContent = text; el.className = "err" + (ok ? " ok" : ""); }
+
+$("authForgot").onclick = async () => {
+  const email = $("authEmail").value.trim();
+  if (!email || !$("authEmail").checkValidity()) { authMsg("Saisis d'abord ton adresse e-mail ci-dessus."); $("authEmail").focus(); return; }
+  const b = $("authForgot"); b.disabled = true;
+  try {
+    const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: appUrl()});
+    if (error) throw error;
+    authMsg("Si un compte existe pour cette adresse, un e-mail de réinitialisation vient d'être envoyé. Ouvre le lien qu'il contient.", true);
+  } catch (e) {
+    const m = (e && e.message) || "";
+    authMsg(/rate limit|seconds/i.test(m) ? "Trop de demandes. Attends une minute puis réessaie." : "Échec de l'envoi : " + m);
+  } finally { b.disabled = false; }
+};
+
+/* Retour depuis le lien « mot de passe oublié » */
+let recovering = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search);
+function showReset(){
+  recovering = true;
+  $("games").hidden = true; closePanel();
+  setCloud("", "Nouveau mot de passe");
+  $("resetErr").textContent = ""; $("resetErr").className = "err";
+  showSplash("Choisis ton nouveau mot de passe.", {reset: true});
+  setTimeout(() => $("resetPass").focus(), 50);
+}
+$("resetForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const p1 = $("resetPass").value, p2 = $("resetPass2").value, err = $("resetErr");
+  err.className = "err";
+  if (p1.length < 6) { err.textContent = "Le mot de passe doit faire au moins 6 caractères."; return; }
+  if (p1 !== p2) { err.textContent = "Les deux mots de passe ne correspondent pas."; return; }
+  $("resetSave").disabled = true;
+  try {
+    const {data, error} = await sb.auth.updateUser({password: p1});
+    if (error) throw error;
+    recovering = false;
+    history.replaceState(null, "", appUrl());
+    $("resetPass").value = $("resetPass2").value = "";
+    toast("Mot de passe modifié");
+    user = null;
+    await onSession({user: data.user});
+  } catch (e2) {
+    const m = (e2 && e2.message) || "";
+    err.textContent = /different from the old/i.test(m) ? "Choisis un mot de passe différent de l'ancien."
+      : /session|expired|JWT/i.test(m) ? "Le lien a expiré. Redemande un e-mail depuis « Mot de passe oublié ? »."
+      : "Échec : " + m;
+  } finally { $("resetSave").disabled = false; }
+});
+
 $("authForm").addEventListener("submit", e => { e.preventDefault(); authSubmit(false); });
 $("authUp").onclick = () => authSubmit(true);
 $("logout").onclick = async () => { await sb.auth.signOut(); };
@@ -793,7 +846,18 @@ function boot(){
     return;
   }
   sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {auth: {persistSession: true, autoRefreshToken: true}});
-  sb.auth.onAuthStateChange((event, session) => { setTimeout(() => onSession(session), 0); });
+  sb.auth.onAuthStateChange((event, session) => {
+    setTimeout(() => {
+      if (event === "PASSWORD_RECOVERY" || (recovering && session)) { showReset(); return; }
+      if (recovering && !session) {
+        recovering = false;
+        history.replaceState(null, "", appUrl());
+        showAuth("Ce lien de réinitialisation n'est plus valide. Redemande un e-mail avec « Mot de passe oublié ? ».");
+        return;
+      }
+      onSession(session);
+    }, 0);
+  });
 }
 boot();
 })();
