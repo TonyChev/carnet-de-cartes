@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a1120">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Carnet de cartes</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 40'%3E%3Cpath d='M15 39C15 39 2 24 2 14.5a13 13 0 0 1 26 0C28 24 15 39 15 39z' fill='%23ff7a59'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: full-bleed pan/zoom map; floating dusk-glass top bar; side panels on desktop, bottom sheets on phones. Single committed dark look (a night-time map). */
+:root{
+  --night:#0a1120;
+  --deep:#121c31;
+  --glass:rgba(14,23,42,.88);
+  --line:rgba(150,180,225,.18);
+  --ink:#ecf2fb;
+  --mute:#93a3bc;
+  --sunset:#ff7a59;
+  --flamingo:#ff4f8b;
+  --lagoon:#2fd4c4;
+  --danger:#ff5d6c;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --gl:max(16px, env(safe-area-inset-left, 0px));
+  --gr:max(16px, env(safe-area-inset-right, 0px));
+  --gt:env(safe-area-inset-top, 0px);
+  --gb:env(safe-area-inset-bottom, 0px);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--night);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--lagoon);outline-offset:2px}
+
+/* Map viewport */
+#vp{position:fixed;inset:0;overflow:hidden;touch-action:none;cursor:crosshair;
+  background:
+    radial-gradient(120% 80% at 50% 110%, rgba(255,79,139,.18), transparent 60%),
+    radial-gradient(90% 60% at 10% -10%, rgba(47,212,196,.12), transparent 60%),
+    var(--night)}
+#vp.grabbing{cursor:grabbing}
+#vp.ro{cursor:grab}
+#stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#stage img{display:block;max-width:none;width:100%;height:100%;user-select:none;-webkit-user-drag:none;pointer-events:none}
+#pins{position:absolute;inset:0}
+
+.pin{position:absolute;width:30px;height:40px;padding:0;border:0;background:none;
+  transform:translate(-50%,-100%) scale(var(--inv,1));transform-origin:50% 100%;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))}
+.pin svg.drop{position:absolute;inset:0;width:30px;height:40px}
+.pin .ico{position:absolute;left:5px;top:4px;width:20px;height:20px}
+.pin .ico svg{width:20px;height:20px}
+.pin.off{display:none}
+.pin.sel svg.drop path{stroke:var(--ink);stroke-width:2.5}
+.pin.ghost{pointer-events:none;opacity:.9;animation:bob 1s ease-in-out infinite alternate}
+@keyframes bob{to{margin-top:-6px}}
+@media (prefers-reduced-motion:reduce){.pin.ghost{animation:none}}
+
+/* Top bar */
+#bar{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:calc(var(--gt) + 10px) var(--gr) 10px var(--gl);
+  background:linear-gradient(to bottom, rgba(10,17,32,.92), rgba(10,17,32,.55) 75%, transparent);pointer-events:none}
+#bar > *{pointer-events:auto}
+.brand{display:flex;flex-direction:column;align-items:flex-start;line-height:.9;margin-right:auto;min-width:0;max-width:100%;border:0;background:none;padding:0;text-align:left}
+.brand small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:5px}
+.brand b{display:flex;align-items:center;gap:6px;max-width:100%;font-family:var(--f-display);font-weight:900;font-size:26px;letter-spacing:.02em;text-transform:uppercase}
+.brand b span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:linear-gradient(90deg,var(--sunset),var(--flamingo));-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand b svg{flex:none;width:18px;height:18px;color:var(--sunset)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:18px;
+  background:var(--glass);border:1px solid var(--line);font-size:13px;font-weight:500;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.chip svg{width:16px;height:16px}
+button.chip:hover{border-color:rgba(150,180,225,.4)}
+.chip .n{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+#cloud .dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+#cloud.ok .dot{background:var(--lagoon);box-shadow:0 0 8px var(--lagoon)}
+#cloud.err .dot{background:var(--danger)}
+
+/* Zoom controls */
+#zoom{position:fixed;z-index:15;right:var(--gr);bottom:calc(var(--gb) + 20px);display:flex;flex-direction:column;
+  background:var(--glass);border:1px solid var(--line);border-radius:12px;overflow:hidden;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#zoom button{width:44px;height:44px;border:0;background:none;display:grid;place-items:center}
+#zoom button + button{border-top:1px solid var(--line)}
+#zoom button:hover{background:rgba(255,255,255,.06)}
+#zoom svg{width:20px;height:20px}
+
+/* Hint */
+#hint{position:fixed;z-index:15;left:50%;transform:translateX(-50%);bottom:calc(var(--gb) + 22px);
+  max-width:calc(100% - 140px);text-align:center;font-size:13px;padding:9px 14px;border-radius:20px;
+  background:var(--glass);border:1px solid var(--line);color:var(--mute);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#hint.act{color:var(--ink);border-color:var(--sunset)}
+#hint button{border:0;background:none;color:var(--sunset);font-weight:600;margin-left:6px;padding:0}
+
+/* Sheets */
+.sheet{position:fixed;z-index:30;background:var(--deep);border:1px solid var(--line);
+  box-shadow:0 20px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;
+  left:0;right:0;bottom:0;max-height:82%;border-radius:18px 18px 0 0;
+  padding:18px var(--gr) calc(var(--gb) + 18px) var(--gl)}
+@media (min-width:760px){
+  .sheet{left:auto;right:16px;bottom:auto;top:calc(var(--gt) + 80px);width:370px;max-height:calc(100% - var(--gt) - 104px);border-radius:16px;padding:18px}
+  #panel.sheet{right:auto;left:16px;width:340px}
+}
+.sheet h2{font-family:var(--f-display);font-weight:700;font-size:24px;letter-spacing:.03em;text-transform:uppercase;margin:0;text-wrap:balance}
+.sheet .head{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.sheet .head > div{flex:1;min-width:0}
+.sheet .sub{font-family:var(--f-mono);font-size:12px;color:var(--mute);margin-top:4px}
+.x{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:none;display:grid;place-items:center}
+.x svg{width:16px;height:16px}
+.scroll{overflow-y:auto;min-height:0;margin:0 -4px;padding:0 4px 4px}
+.lbl{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:14px 0 8px}
+.link{border:0;background:none;padding:0;color:var(--sunset);font-weight:600;font-size:12px;letter-spacing:.02em;text-transform:none}
+.back{border:0;background:none;padding:0;color:var(--mute);font-size:13px;margin-bottom:6px}
+
+.types{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.type{display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.02);text-align:left;font-size:13px;min-width:0}
+.type .lab{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.type[aria-pressed="true"]{border-color:var(--c);background:color-mix(in srgb, var(--c) 16%, transparent)}
+.type.add{border-style:dashed;color:var(--mute)}
+.sw{flex:none;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--c);color:var(--k)}
+.sw svg{width:18px;height:18px}
+.type.add .sw{background:none;border:1px dashed var(--line);color:var(--mute)}
+
+textarea,input[type="text"],input[type="search"]{width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25);font-size:14px}
+textarea{min-height:76px;resize:vertical;padding:10px 12px;line-height:1.45}
+input[type="text"],input[type="search"]{height:42px;padding:0 12px}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.btn{flex:1;min-width:100px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);font-weight:600;font-size:14px;padding:0 12px}
+.btn.primary{border:0;color:#1a0b12;background:linear-gradient(90deg,var(--sunset),var(--flamingo))}
+.btn:disabled{opacity:.45}
+.btn.danger{color:var(--danger)}
+.btn.danger.armed{background:var(--danger);color:#1a0b12;border-color:var(--danger)}
+.meta{font-size:12px;color:var(--mute);margin-top:10px;line-height:1.5}
+
+/* Panel: filters and list */
+.frow{display:flex;gap:6px;align-items:stretch}
+.frow + .frow{margin-top:6px}
+.frow .type{flex:1;padding:8px}
+.frow .cnt{margin-left:auto;font-family:var(--f-mono);font-size:12px;color:var(--mute)}
+.frow .type[aria-pressed="false"]{opacity:.45}
+.frow .type[aria-pressed="false"] .sw{filter:grayscale(1)}
+.ibtn{flex:none;width:42px;border-radius:12px;border:1px solid var(--line);background:none;display:grid;place-items:center;color:var(--mute)}
+.ibtn svg{width:16px;height:16px}
+.ibtn:hover{color:var(--ink)}
+.list{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.row{display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;border:0;background:none;text-align:left;width:100%}
+.row:hover{background:rgba(255,255,255,.05)}
+.row .sw{width:26px;height:26px;border-radius:7px}
+.row .sw svg{width:16px;height:16px}
+.row .t{flex:1;min-width:0}
+.row .t b{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .t span{display:block;font-size:12px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .g{font-family:var(--f-mono);font-size:12px;color:var(--mute)}
+.empty{color:var(--mute);font-size:13px;padding:12px 4px;line-height:1.5}
+
+/* Games */
+.grow{display:flex;gap:6px;align-items:stretch}
+.grow + .grow{margin-top:6px}
+.game{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:8px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.02);text-align:left}
+.game[aria-current="true"]{border-color:var(--sunset);background:rgba(255,122,89,.1)}
+.thumb{flex:none;width:56px;height:42px;border-radius:8px;background:#1b2740 center/cover no-repeat;border:1px solid var(--line)}
+.game b{display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.game span{display:block;font-size:12px;color:var(--mute)}
+.game .t{min-width:0}
+.pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pick .btn{flex:none}
+.pick span{font-size:12px;color:var(--mute);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+
+/* Type editor */
+.swatches{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.swatches button,.swatches label{aspect-ratio:1;max-width:100%;border-radius:10px;border:2px solid transparent;background:var(--c);padding:0;position:relative}
+.swatches button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 2px var(--deep)}
+.swatches label{background:conic-gradient(#ff5d6c,#ffc24b,#8be15a,#2fd4c4,#5aa8ff,#b48cff,#ff5d6c);cursor:pointer;display:block}
+.swatches label.on{border-color:var(--ink)}
+.swatches input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.icons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.icons button{aspect-ratio:1;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.02);display:grid;place-items:center;padding:0}
+.icons button svg{width:20px;height:20px}
+.icons button[aria-pressed="true"]{background:var(--c);color:var(--k);border-color:var(--c)}
+.preview{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.25);margin-top:4px}
+.preview .pin{position:relative;transform:none;flex:none}
+.preview b{font-size:14px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Splash */
+#splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;padding:calc(var(--gt) + 90px) var(--gr) calc(var(--gb) + 30px) var(--gl)}
+.card{max-width:440px;width:100%;background:var(--glass);border:1px solid var(--line);border-radius:20px;padding:28px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.card h1{font-family:var(--f-display);font-weight:900;font-size:clamp(34px,8vw,48px);line-height:.95;text-transform:uppercase;margin:0 0 12px;text-wrap:balance}
+.card h1 em{font-style:normal;background:linear-gradient(90deg,var(--sunset),var(--flamingo));-webkit-background-clip:text;background-clip:text;color:transparent}
+.card p{color:var(--mute);line-height:1.55;margin:0 0 10px;font-size:14px}
+.card .btn{width:100%;margin-top:14px}
+
+#toast{position:fixed;z-index:40;left:50%;top:calc(var(--gt) + 76px);transform:translateX(-50%);
+  padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--night);font-size:13px;font-weight:600;max-width:calc(100% - 32px);text-align:center}
+#toast.err{background:var(--danger)}
+#busy{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(10,17,32,.75);font-weight:600;padding:0 var(--gr) 0 var(--gl);text-align:center}
+</style>
+<style>
+html,body{margin:0}
+body{font-size:14px}
+[hidden]{display:none!important}
+#stage img:not([src]){display:none}
+img{max-width:100%}
+.auth{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.auth input{width:100%;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25);padding:0 12px;font-size:15px}
+.auth .actions{margin-top:4px}
+.auth .err{color:var(--danger);font-size:13px;min-height:1em}
+.who{font-size:12px;color:var(--mute);display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.who span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="vp" aria-label="Carte">
+  <div id="stage"><img id="map" alt="Carte du jeu" draggable="false"><div id="pins"></div></div>
+</div>
+
+<header id="bar">
+  <button class="brand" id="gameBtn" type="button" aria-haspopup="dialog">
+    <small>Carnet de cartes</small>
+    <b><span id="gameName">Mes cartes</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></b>
+  </button>
+  <span class="chip" id="cloud" title="État de la sauvegarde cloud"><span class="dot"></span><span id="cloudTxt">Connexion…</span></span>
+  <button class="chip" id="listBtn" type="button" aria-expanded="false" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    <span class="n" id="count">0</span> marqueurs
+  </button>
+  <input type="file" id="file" accept="image/*" hidden>
+</header>
+
+<div id="zoom" hidden>
+  <button type="button" id="zin" aria-label="Zoomer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button type="button" id="zout" aria-label="Dézoomer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+  <button type="button" id="zfit" aria-label="Voir toute la carte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+</div>
+
+<div id="hint" hidden></div>
+
+<section id="splash">
+  <div class="card">
+    <h1>Tes cartes, <em>tes trouvailles.</em></h1>
+    <p id="splashTxt">Connexion au cloud…</p>
+    <form class="auth" id="authForm" hidden>
+      <input type="email" id="authEmail" autocomplete="email" placeholder="Adresse e-mail" required>
+      <input type="password" id="authPass" autocomplete="current-password" placeholder="Mot de passe (6 caractères min.)" minlength="6" required>
+      <div class="err" id="authErr"></div>
+      <div class="actions">
+        <button class="btn primary" type="submit" id="authIn">Se connecter</button>
+        <button class="btn" type="button" id="authUp">Créer un compte</button>
+      </div>
+    </form>
+    <button class="btn primary" id="splashBtn" type="button" hidden>Ajouter une carte</button>
+  </div>
+</section>
+
+<aside class="sheet" id="editor" hidden aria-labelledby="edTitle">
+  <div class="head">
+    <div><h2 id="edTitle">Nouveau marqueur</h2><div class="sub" id="edPos"></div></div>
+    <button class="x" type="button" data-close="editor" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="scroll">
+    <span class="lbl">Type</span>
+    <div class="types" id="edTypes"></div>
+    <label class="lbl" for="edNote">Note</label>
+    <textarea id="edNote" maxlength="500" placeholder="Ex. : 3e figurine cachée derrière le motel"></textarea>
+    <div class="meta" id="edMeta"></div>
+  </div>
+  <div class="actions" id="edActions"></div>
+</aside>
+
+<aside class="sheet" id="typeEd" hidden aria-labelledby="tTitle">
+  <div class="head">
+    <div><h2 id="tTitle">Nouveau type</h2><div class="sub" id="tSub"></div></div>
+    <button class="x" type="button" data-close="typeEd" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="scroll">
+    <div class="preview" id="tPreview"></div>
+    <label class="lbl" for="tName">Nom</label>
+    <input type="text" id="tName" maxlength="40" placeholder="Ex. : Graffiti">
+    <span class="lbl">Couleur</span>
+    <div class="swatches" id="tColors"></div>
+    <span class="lbl">Icône</span>
+    <div class="icons" id="tIcons"></div>
+    <div class="meta" id="tMeta"></div>
+  </div>
+  <div class="actions" id="tActions"></div>
+</aside>
+
+<aside class="sheet" id="games" hidden aria-labelledby="gTitle">
+  <div class="head">
+    <div><h2 id="gTitle">Mes cartes</h2><div class="sub" id="gSub"></div></div>
+    <button class="x" type="button" data-close="games" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="scroll" id="gBody"></div>
+  <div class="actions" id="gActions"></div>
+  <div class="who"><span id="whoEmail"></span><button class="link" type="button" id="logout">Se déconnecter</button></div>
+</aside>
+
+<aside class="sheet" id="panel" hidden aria-labelledby="pTitle">
+  <div class="head">
+    <div><h2 id="pTitle">Marqueurs</h2><div class="sub" id="pSub"></div></div>
+    <button class="x" type="button" data-close="panel" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="scroll">
+    <span class="lbl">Types affichés <button class="link" type="button" id="addTypeBtn">+ Nouveau type</button></span>
+    <div id="filters"></div>
+    <label class="lbl" for="q">Rechercher</label>
+    <input type="search" id="q" placeholder="Dans les notes…">
+    <div class="list" id="list"></div>
+  </div>
+</aside>
+
+<div id="toast" hidden></div>
+<div id="busy" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
