@@ -18,6 +18,7 @@ const ICONS = {
   dollar:'<path d="M12 3v18"/><path d="M16.5 7.5c-.8-1.3-2.5-2-4.5-2-2.5 0-4 1.3-4 3s1.5 2.5 4 3 4 1.4 4 3.2-1.7 3-4.3 3c-2 0-3.6-.8-4.4-2.2"/>',
   heart:'<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/>',
   key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2.5 2.5M13.5 9.5l2 2"/>',
+  book:'<path d="M12 6.5C10.5 5 8 4.5 4 4.5v13c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-13c-4 0-6.5.5-8 2z"/><path d="M12 6.5v13"/>',
   camera:'<path d="M4 8h3.5L9 5.5h6L16.5 8H20v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   boat:'<path d="M3 15h18l-3 5H6z"/><path d="M12 15V4l6 8h-6"/>',
   chest:'<path d="M4 10h16v10H4z"/><path d="M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4"/><path d="M11 13h2v3h-2z"/>',
@@ -115,8 +116,9 @@ function apply(){
   if (raf) return;
   raf = requestAnimationFrame(() => {
     raf = 0;
-    stage.style.transform = `translate(${tx}px,${ty}px) scale(${z})`;
-    stage.style.setProperty("--inv", 1 / z);
+    stage.style.width = (imgW * z) + "px"; stage.style.height = (imgH * z) + "px";
+    stage.style.transform = `translate3d(${Math.round(tx)}px,${Math.round(ty)}px,0)`;
+    if (info) placeInfo();
   });
 }
 const clampZ = v => Math.max(fitZ * 0.8, Math.min(Math.max(4, fitZ * 4), v));
@@ -155,7 +157,7 @@ window.addEventListener("resize", () => {
 const ptrs = new Map();
 let tap = null, lastMid = null, lastDist = 0;
 vp.addEventListener("pointerdown", e => {
-  if (!imgW) return;
+  if (!imgW || e.target.closest(".bubble")) return;
   vp.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
   if (ptrs.size === 1) tap = {x:e.clientX, y:e.clientY, t:performance.now(), pin:e.target.closest(".pin"), ok:true};
@@ -166,7 +168,7 @@ vp.addEventListener("pointermove", e => {
   const p = ptrs.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y;
   p.x = e.clientX; p.y = e.clientY;
-  if (tap && tap.ok && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 7) { tap.ok = false; vp.classList.add("grabbing"); }
+  if (tap && tap.ok && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > (e.pointerType === "mouse" ? 6 : 12)) { tap.ok = false; vp.classList.add("grabbing"); }
   if (ptrs.size === 1) { if (!tap || !tap.ok) { tx += dx; ty += dy; clampPan(); apply(); } }
   else if (ptrs.size === 2 && lastMid) {
     const [a,b] = [...ptrs.values()];
@@ -200,14 +202,15 @@ $("zout").onclick = () => zoomCenter(1 / 1.6);
 $("zfit").onclick = fit;
 document.addEventListener("keydown", e => {
   if (e.target.matches("input,textarea")) { if (e.key === "Escape") e.target.blur(); return; }
-  if (e.key === "Escape") { closeTypeEd(); closeEditor(); closePanel(); $("games").hidden = true; cancelMove(); }
+  if (e.key === "Escape") { closeInfo(); closeTypeEd(); closeEditor(); closePanel(); $("games").hidden = true; cancelMove(); }
   if (!imgW) return;
   if (e.key === "+" || e.key === "=") zoomCenter(1.4);
   if (e.key === "-") zoomCenter(1 / 1.4);
 });
 
 function onTap(t, cx, cy){
-  if (t.pin) { openEdit(t.pin.dataset.id); return; }
+  if (t.pin && !movingId) { showInfo(t.pin.dataset.id); return; }
+  if (info) { closeInfo(); return; }
   const n = toNorm(cx, cy);
   if (n.x < 0 || n.y < 0 || n.x > 1 || n.y > 1) { closeEditor(); return; }
   if (movingId) { moveTo(n); return; }
@@ -217,7 +220,9 @@ function onTap(t, cx, cy){
 }
 
 /* ---------- pins ---------- */
+const isHome = t => t.icon === "house";
 function pinHTML(t){
+  if (isHome(t)) return `<svg class="drop" viewBox="0 0 40 46" aria-hidden="true"><path d="M20 2.5L37.5 17v18.5a1.5 1.5 0 0 1-1.5 1.5H25l-5 7-5-7H4a1.5 1.5 0 0 1-1.5-1.5V17z" fill="${t.color}" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg><span class="ico" style="color:${ink(t.color)}">${I(ICONS[t.icon])}</span>`;
   return `<svg class="drop" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 39C15 39 2 24 2 14.5a13 13 0 0 1 26 0C28 24 15 39 15 39z" fill="${t.color}" stroke="#0a1120" stroke-width="2"/></svg><span class="ico" style="color:${ink(t.color)}">${I(ICONS[t.icon])}</span>`;
 }
 function renderPins(){
@@ -226,17 +231,19 @@ function renderPins(){
     const t = typeOf(m.type);
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "pin" + (hidden.has(t.id) ? " off" : "") + (ed && ed.id === m.id ? " sel" : "");
+    b.className = "pin" + (isHome(t) ? " home" : "") + (hidden.has(t.id) ? " off" : "") + ((ed && ed.id === m.id) || (info && info.id === m.id) ? " sel" : "");
     b.dataset.id = m.id;
     b.style.left = (m.x * 100) + "%"; b.style.top = (m.y * 100) + "%";
     b.setAttribute("aria-label", t.label + (m.note ? " : " + m.note : ""));
+    b.title = t.label + (m.note ? " : " + m.note : "");
     b.innerHTML = pinHTML(t);
-    b.addEventListener("click", ev => { if (ev.detail === 0) openEdit(m.id); });
+    b.addEventListener("click", ev => { if (ev.detail === 0) showInfo(m.id); });
     pinsEl.appendChild(b);
   }
+  if (info) renderInfo();
   if (ed && ed.mode === "new") {
     const g = document.createElement("div");
-    g.className = "pin ghost";
+    g.className = "pin ghost" + (isHome(typeOf(ed.type)) ? " home" : "");
     g.style.left = (ed.x * 100) + "%"; g.style.top = (ed.y * 100) + "%";
     g.innerHTML = pinHTML(typeOf(ed.type));
     pinsEl.appendChild(g);
@@ -248,6 +255,44 @@ function typeTile(t, cls){
   b.innerHTML = `<span class="sw">${I(ICONS[t.icon])}</span><span class="lab"></span>`;
   b.querySelector(".lab").textContent = t.label;
   return b;
+}
+
+/* ---------- info bubble ---------- */
+let info = null;      // {id}
+function showInfo(id){
+  if (!markers.some(m => m.id === id)) return;
+  if (ed) { ed = null; $("editor").hidden = true; }
+  info = {id}; renderPins();
+}
+function closeInfo(){ if (!info) return; info = null; renderPins(); }
+function renderInfo(){
+  const m = markers.find(m => m.id === info.id);
+  if (!m || hidden.has(typeOf(m.type).id)) { info = null; return; }
+  const t = typeOf(m.type);
+  const el = document.createElement("div");
+  el.className = "bubble" + (isHome(t) ? " home" : ""); el.style.cssText = tvars(t);
+  el.style.left = (m.x * 100) + "%"; el.style.top = (m.y * 100) + "%";
+  el.setAttribute("role", "dialog");
+  el.innerHTML = `<div class="bh"><span class="sw">${I(ICONS[t.icon])}</span><b></b><button class="bx" type="button" aria-label="Fermer">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>` +
+    `<p></p><div class="bf"><span>Secteur ${grid(m.x, m.y)}</span><button class="link" type="button">Modifier</button></div>`;
+  el.querySelector("b").textContent = t.label;
+  const p = el.querySelector("p");
+  if (m.note) p.textContent = m.note; else { p.textContent = "Sans note"; p.className = "none"; }
+  el.querySelector(".bx").onclick = closeInfo;
+  el.querySelector(".link").onclick = () => { info = null; openEdit(m.id); };
+  el.addEventListener("wheel", e => e.stopPropagation(), {passive:true});
+  pinsEl.appendChild(el);
+  placeInfo();
+}
+function placeInfo(){
+  const el = pinsEl.querySelector(".bubble"); if (!el) return;
+  const m = markers.find(m => m.id === info.id); if (!m) return;
+  const py = ty + m.y * imgH * z, px = tx + m.x * imgW * z;
+  const top = $("bar").getBoundingClientRect().bottom;
+  el.classList.toggle("below", py - el.offsetHeight - 60 < top);
+  const half = el.offsetWidth / 2, vw = vp.clientWidth;
+  const shift = Math.max(12 + half - px, Math.min(0, vw - 12 - half - px));
+  el.style.setProperty("--sx", shift + "px");
 }
 
 /* ---------- marker editor ---------- */
@@ -277,6 +322,7 @@ function updateSave(){ const s = $("edSave"); if (s) s.disabled = !ed || !types.
 function fmtDate(ms){ try { return new Date(ms).toLocaleDateString("fr-FR", {day:"numeric", month:"long", year:"numeric"}); } catch (e) { return ""; } }
 
 function openNew(n){
+  info = null;
   const st = sortedTypes();
   const last = lsGet("carnet.lastType." + gameId);
   ed = {mode:"new", x:n.x, y:n.y, type: st.some(t => t.id === last) ? last : (st[0] ? st[0].id : null)};
@@ -290,6 +336,7 @@ function openNew(n){
 }
 function openEdit(id){
   const m = markers.find(m => m.id === id); if (!m) return;
+  info = null;
   ed = {mode:"edit", id, type: m.type};
   $("edTitle").textContent = typeOf(m.type).label;
   $("edPos").textContent = `Secteur ${grid(m.x, m.y)} · ${m.x.toFixed(4)}, ${m.y.toFixed(4)}`;
@@ -332,7 +379,7 @@ async function removeMarker(id){
 
 /* ---------- move ---------- */
 function startMove(id){
-  movingId = id; closeEditor();
+  movingId = id; info = null; closeEditor();
   showHint(`Touche le nouvel emplacement <button type="button" id="mvCancel">Annuler</button>`, true);
   $("mvCancel").onclick = cancelMove;
 }
@@ -674,7 +721,7 @@ async function loadGameData(){
 async function selectGame(id){
   if (id === gameId && id) { loadImage(); return; }
   gameId = id; lsSet("carnet.game", id || "");
-  ed = null; tEd = null; movingId = null; $("editor").hidden = true; $("typeEd").hidden = true;
+  ed = null; tEd = null; info = null; movingId = null; $("editor").hidden = true; $("typeEd").hidden = true;
   types = []; markers = [];
   try { hidden = new Set(JSON.parse(lsGet("carnet.hidden." + id) || "[]")); } catch (e) { hidden = new Set(); }
   imgW = 0; img.removeAttribute("src"); pinsEl.innerHTML = "";
@@ -704,7 +751,6 @@ async function loadImage(){
   img.onload = () => {
     if (imgPath !== g.image_path) return;
     imgW = img.naturalWidth; imgH = img.naturalHeight;
-    stage.style.width = imgW + "px"; stage.style.height = imgH + "px";
     $("splash").hidden = true; $("zoom").hidden = false;
     fit(); renderAll(); showDefaultHint();
   };

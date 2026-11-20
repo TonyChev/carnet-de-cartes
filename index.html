@@ -54,21 +54,42 @@ button:disabled{cursor:default}
     var(--night)}
 #vp.grabbing{cursor:grabbing}
 #vp.ro{cursor:grab}
-#stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#stage{position:absolute;left:0;top:0;will-change:transform}
 #stage img{display:block;max-width:none;width:100%;height:100%;user-select:none;-webkit-user-drag:none;pointer-events:none}
 #pins{position:absolute;inset:0}
 
 .pin{position:absolute;width:30px;height:40px;padding:0;border:0;background:none;
-  transform:translate(-50%,-100%) scale(var(--inv,1));transform-origin:50% 100%;
-  filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))}
+  transform:translate(-50%,-100%);filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))}
+.pin::before{content:"";position:absolute;inset:-8px -8px -2px}
 .pin svg.drop{position:absolute;inset:0;width:30px;height:40px}
 .pin .ico{position:absolute;left:5px;top:4px;width:20px;height:20px}
 .pin .ico svg{width:20px;height:20px}
 .pin.off{display:none}
 .pin.sel svg.drop path{stroke:var(--ink);stroke-width:2.5}
+.pin.home{width:40px;height:46px;z-index:2;filter:drop-shadow(0 0 6px var(--sunset)) drop-shadow(0 2px 3px rgba(0,0,0,.6))}
+.pin.home svg.drop{width:40px;height:46px}
+.pin.home .ico{left:9px;top:15px}
+.pin.home::after{content:"";position:absolute;left:50%;bottom:-6px;width:22px;height:8px;margin-left:-11px;border-radius:50%;border:2px solid #fff;opacity:.85;animation:halo 1.8s ease-out infinite}
+@keyframes halo{from{transform:scale(.6);opacity:.9}to{transform:scale(1.8);opacity:0}}
+.pin.sel{z-index:3}
 .pin.ghost{pointer-events:none;opacity:.9;animation:bob 1s ease-in-out infinite alternate}
 @keyframes bob{to{margin-top:-6px}}
-@media (prefers-reduced-motion:reduce){.pin.ghost{animation:none}}
+@media (prefers-reduced-motion:reduce){.pin.ghost,.pin.home::after{animation:none}}
+.bubble{position:absolute;z-index:5;width:max-content;min-width:180px;max-width:min(280px, calc(100vw - 32px));
+  transform:translate(calc(-50% + var(--sx,0px)), calc(-100% - 50px));
+  background:var(--deep);border:1px solid var(--c);border-radius:14px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.55);cursor:default;text-align:left}
+.bubble.home{transform:translate(calc(-50% + var(--sx,0px)), calc(-100% - 58px))}
+.bubble.below{transform:translate(calc(-50% + var(--sx,0px)), 12px)}
+.bubble .bh{display:flex;align-items:center;gap:8px}
+.bubble .sw{width:24px;height:24px;border-radius:7px}
+.bubble .sw svg{width:15px;height:15px}
+.bubble b{flex:1;min-width:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bubble .bx{flex:none;width:26px;height:26px;border:0;border-radius:50%;background:none;display:grid;place-items:center;color:var(--mute);padding:0}
+.bubble .bx svg{width:14px;height:14px}
+.bubble p{margin:8px 0 0;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:9em;overflow-y:auto}
+.bubble p.none{color:var(--mute);font-style:italic}
+.bubble .bf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;font-family:var(--f-mono);font-size:11px;color:var(--mute)}
+.bubble .link{font-family:var(--f-body);font-size:13px}
 
 /* Top bar */
 #bar{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
@@ -338,6 +359,6 @@ img{max-width:100%}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
