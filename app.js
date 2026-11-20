@@ -156,18 +156,58 @@ window.addEventListener("resize", () => {
 /* ---------- gestures ---------- */
 const ptrs = new Map();
 let tap = null, lastMid = null, lastDist = 0;
+let drag = null, holdT = 0;   // glisser un marqueur après un appui long
+const HOLD_MS = 450;
+function cancelHold(){ clearTimeout(holdT); holdT = 0; }
+function startDrag(pin, cx, cy){
+  holdT = 0;
+  const m = markers.find(m => m.id === pin.dataset.id);
+  if (!m || !pin.isConnected || ptrs.size !== 1) return;
+  const n = toNorm(cx, cy);
+  drag = {id: m.id, el: pin, dx: m.x - n.x, dy: m.y - n.y, x: m.x, y: m.y, ox: m.x, oy: m.y};
+  if (tap) tap.ok = false;
+  if (info) { info = null; const b = pinsEl.querySelector(".bubble"); if (b) b.remove(); }
+  pin.classList.add("drag");
+  vp.classList.add("dragging");
+  if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
+}
+function moveDrag(cx, cy){
+  const n = toNorm(cx, cy);
+  drag.x = Math.min(1, Math.max(0, n.x + drag.dx));
+  drag.y = Math.min(1, Math.max(0, n.y + drag.dy));
+  drag.el.style.left = (drag.x * 100) + "%"; drag.el.style.top = (drag.y * 100) + "%";
+}
+async function endDrag(cancel){
+  const d = drag; drag = null;
+  vp.classList.remove("dragging");
+  const m = markers.find(m => m.id === d.id);
+  const moved = !cancel && Math.hypot((d.x - d.ox) * imgW, (d.y - d.oy) * imgH) > 0.5;
+  if (!m || !moved) { renderPins(); return; }
+  m.x = d.x; m.y = d.y; renderPins();
+  try { must(await sb.from("carnet_markers").update({x: d.x, y: d.y}).eq("id", d.id)); toast("Marqueur déplacé"); }
+  catch (e) { fail(e); }
+  try { await loadGameData(); } catch (e) {}
+}
+vp.addEventListener("contextmenu", e => { if (e.target.closest(".pin")) e.preventDefault(); });
 vp.addEventListener("pointerdown", e => {
   if (!imgW || e.target.closest(".bubble")) return;
   vp.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
-  if (ptrs.size === 1) tap = {x:e.clientX, y:e.clientY, t:performance.now(), pin:e.target.closest(".pin"), ok:true};
-  else if (tap) tap.ok = false;
+  cancelHold();
+  if (ptrs.size === 1) {
+    const pin = e.target.closest(".pin:not(.ghost)");
+    tap = {x:e.clientX, y:e.clientY, t:performance.now(), pin, ok:true};
+    if (pin && !movingId) { const cx = e.clientX, cy = e.clientY; holdT = setTimeout(() => startDrag(pin, cx, cy), HOLD_MS); }
+  }
+  else { if (tap) tap.ok = false; if (drag) endDrag(true); }
   if (ptrs.size === 2) { const [a,b] = [...ptrs.values()]; lastMid = {x:(a.x+b.x)/2, y:(a.y+b.y)/2}; lastDist = Math.hypot(a.x-b.x, a.y-b.y); }
 });
 vp.addEventListener("pointermove", e => {
   const p = ptrs.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y;
   p.x = e.clientX; p.y = e.clientY;
+  if (drag) { moveDrag(e.clientX, e.clientY); return; }
+  if (holdT && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > (e.pointerType === "mouse" ? 6 : 12)) cancelHold();
   if (tap && tap.ok && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > (e.pointerType === "mouse" ? 6 : 12)) { tap.ok = false; vp.classList.add("grabbing"); }
   if (ptrs.size === 1) { if (!tap || !tap.ok) { tx += dx; ty += dy; clampPan(); apply(); } }
   else if (ptrs.size === 2 && lastMid) {
@@ -182,10 +222,12 @@ vp.addEventListener("pointermove", e => {
 function endPtr(e){
   if (!ptrs.has(e.pointerId)) return;
   ptrs.delete(e.pointerId);
+  cancelHold();
+  if (drag) { if (ptrs.size === 0) { tap = null; endDrag(e.type !== "pointerup"); } return; }
   if (ptrs.size === 1) { lastMid = null; lastDist = 0; tap = null; }
   if (ptrs.size === 0) {
     vp.classList.remove("grabbing");
-    if (e.type === "pointerup" && tap && tap.ok && performance.now() - tap.t < 600) onTap(tap, e.clientX, e.clientY);
+    if (e.type === "pointerup" && tap && tap.ok && (performance.now() - tap.t < 600 || tap.pin)) onTap(tap, e.clientX, e.clientY);
     tap = null;
   }
 }
@@ -202,7 +244,7 @@ $("zout").onclick = () => zoomCenter(1 / 1.6);
 $("zfit").onclick = fit;
 document.addEventListener("keydown", e => {
   if (e.target.matches("input,textarea")) { if (e.key === "Escape") e.target.blur(); return; }
-  if (e.key === "Escape") { closeInfo(); closeTypeEd(); closeEditor(); closePanel(); $("games").hidden = true; cancelMove(); }
+  if (e.key === "Escape") { if (drag) endDrag(true); closeInfo(); closeTypeEd(); closeEditor(); closePanel(); $("games").hidden = true; cancelMove(); }
   if (!imgW) return;
   if (e.key === "+" || e.key === "=") zoomCenter(1.4);
   if (e.key === "-") zoomCenter(1 / 1.4);
@@ -226,6 +268,7 @@ function pinHTML(t){
   return `<svg class="drop" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 39C15 39 2 24 2 14.5a13 13 0 0 1 26 0C28 24 15 39 15 39z" fill="${t.color}" stroke="#0a1120" stroke-width="2"/></svg><span class="ico" style="color:${ink(t.color)}">${I(ICONS[t.icon])}</span>`;
 }
 function renderPins(){
+  if (drag) return;
   pinsEl.innerHTML = "";
   for (const m of markers) {
     const t = typeOf(m.type);
@@ -274,7 +317,7 @@ function renderInfo(){
   el.style.left = (m.x * 100) + "%"; el.style.top = (m.y * 100) + "%";
   el.setAttribute("role", "dialog");
   el.innerHTML = `<div class="bh"><span class="sw">${I(ICONS[t.icon])}</span><b></b><button class="bx" type="button" aria-label="Fermer">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>` +
-    `<p></p><div class="bf"><span>Secteur ${grid(m.x, m.y)}</span><button class="link" type="button">Modifier</button></div>`;
+    `<p></p><div class="bf"><span>Secteur ${grid(m.x, m.y)} · maintiens pour glisser</span><button class="link" type="button">Modifier</button></div>`;
   el.querySelector("b").textContent = t.label;
   const p = el.querySelector("p");
   if (m.note) p.textContent = m.note; else { p.textContent = "Sans note"; p.className = "none"; }
@@ -395,7 +438,7 @@ let hintTimer;
 function showHint(html, act){ const h = $("hint"); h.innerHTML = html; h.className = act ? "act" : ""; h.hidden = false; clearTimeout(hintTimer); }
 function showDefaultHint(){
   if (!imgW) { $("hint").hidden = true; return; }
-  showHint("Touche la carte pour poser un marqueur");
+  showHint("Touche la carte pour poser un marqueur · maintiens un marqueur pour le glisser");
   hintTimer = setTimeout(() => { if (!movingId) $("hint").hidden = true; }, 6000);
 }
 
